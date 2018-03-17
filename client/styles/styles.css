@@ -60,7 +60,7 @@ form input[type=text] {
 }
 
 .chat {
-    
+
     padding: 5px;
     margin-bottom: 5px;
     background-color: #eee;
@@ -100,4 +100,3 @@ form input[type=text] {
 #friends {
     float: left;
 }
-
