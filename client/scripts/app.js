@@ -8,7 +8,7 @@ var app = {
   roomname: 'lobby',
   messages: [],
   lastMessageId: 0,
-  friends: []
+  friends: {}
 
 }
 
@@ -17,11 +17,20 @@ app.init = function() {
   app.$send = $('#send');
   app.$chats = $('#chats');
   app.$message = $('#message');
+  app.$roomSelect = $('#roomSelect');
 
   app.$send.on('submit', app.handleSubmit);
-  app.fetch(); //fetch previous messages
-  //poll for new messages at some interval (auto refresh)
+  app.fetch(false); //fetch previous messages
 
+  //event listeners
+  app.$chats.on('click', '.username', app.handleUsernameClick);
+  app.$send.on('submit', app.handleSubmit);
+  app.$roomSelect.on('change', app.handleRoomChange);
+
+  //poll for new messages at some interval (auto refresh)
+  setInterval(function() {
+    app.fetch(true);
+  }, 2986);
 };
 
 
@@ -39,7 +48,7 @@ app.send = function(message) {
     success: function (data) {
       //clear messages input
       app.$message.val('');
-      console.log('Message Sent Successfully', data);
+      app.fetch();
     },
     error: function (data) {
       // See: https://developer.mozilla.org/en-US/docs/Web/API/console.error
@@ -47,12 +56,6 @@ app.send = function(message) {
     }
   });
 }
-
-
-
-
-
-
 
 //get all of the messages from the server
 // then do all work necessary to whatever work is neccessary to display on DOM
@@ -69,7 +72,16 @@ app.fetch = function() {
         return;
       }
       app.messages = data.results;
-      var mostRecentMessage = app.messages[app.messages.length]
+      var mostRecentMessage = app.messages[app.messages.length - 1];
+
+      if (mostRecentMessage.objectId !== app.lastMessageId) {
+        //update with fetched rooms
+        app.renderRoomList(data.results);
+        //update with fetched messages
+        app.renderMessages(data.results, animate);
+        //store most recent message ID
+        app.lastMessageId = mostRecentMessage.objectId;
+      }
     },
     error: function (data) {
       // See: https://developer.mozilla.org/en-US/docs/Web/API/console.error
@@ -92,31 +104,95 @@ app.renderMessages = function(messages) {
   //clear old messages
   app.clearMessages()
   //render each individual message can use forEach()
-  for (var i = 0; i < messages.length; i++) {
-    app.renderMessage(messages[i]);
+  if (Array.isArray(messages)) {
+    messages.filter(function(message) {
+      return message.roomname === app.roomname || app.roomname === 'lobby' && !message.roomname;
+    }).forEach(app.renderMessage);
   }
+  //scroll to top
+  if (animate) {
+    $('body').animate({scrollTop: '0px'}, 'fast');
+  }
+}
+
+app.renderRoomList = function(messages) {
+  app.$roomSelect.html('<option value="__newRoom">New room...</option>');
+
+  if (messages) {
+    var rooms = {};
+    messages.forEach(function(message) {
+      var roomname = message.roomname;
+      if (roomname && !rooms[roomname]) {
+        //add the room to the select menu
+        app.renderRoom(roomname);
+        //store that we've added the room already
+        rooms[roomname] = true;
+      }
+    })
+  }
+  app.$roomSelect.val(app.roomname);
+}
+
+app.renderRoom = function(roomname) {
+  //prevent XSS
+  var $option = $('<option/>').val(roomname).text(roomname);
+  //add to select
+  app.$roomSelect.append($option);
+
 }
 
 
 app.renderMessage = function(message) {
-  // var escapedMsg = _.escape(message.username + ': ' + message.text);
-  // var $message = $(`<div class="username"> ${escapedMsg}</div>`);
-  var $message = $(`<div class="username">${message.username}:${message.text}</div>`);
+  if (!message.roomname) {
+    message.roomname = 'lobby';
+  }
+  var $message = $(`<div class="chat username">${message.username}:${message.text}</div>`);
 
-  $message.on('click', function() {
-    app.friends.push(message.username);
-    app.handleUsernameClick();
-  })
+
+  if (app.friends[message.username] === true) {
+    $username.addClass('friend');
+  }
 
   $message.appendTo('#chats');
 }
 
-app.renderRoom = function(roomName) {
-  $('#roomSelect').append(`<div>${roomName}</div>`);
-}
 
 app.handleUsernameClick = function() {
-  console.log('success');
+  var username = $(event.target).data('username');
+  if (username !== undefined) {
+    //toggle friend
+    app.friends[username] = !app.friends[username];
+
+    //escape username in case it contains quote
+    var selector = '[data-username="]' + username.replace(/"/g, '\\\"') + '"]';
+
+    var $usernames = $(selector).toggleClass('friend');
+  }
+}
+
+app.handleRoomChange = function(event) {
+
+    var selectIndex = app.$roomSelect.prop('selectedIndex');
+    // New room is always the first option
+    if (selectIndex === 0) {
+      var roomname = prompt('Enter room name');
+      if (roomname) {
+        // Set as the current room
+        app.roomname = roomname;
+
+        // Add the room to the menu
+        app.renderRoom(roomname);
+
+        // Select the menu option
+        app.$roomSelect.val(roomname);
+      }
+    } else {
+      app.startSpinner();
+      // Store as undefined for empty names
+      app.roomname = app.$roomSelect.val();
+    }
+    // Rerender messages
+    app.renderMessages(app.messages);
 }
 
 app.handleSubmit = function(event) {
